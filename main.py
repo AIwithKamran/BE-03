@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from supabase import create_client, Client
 from pydantic import BaseModel
@@ -70,3 +70,19 @@ async def login(body: AuthRequest):
             'refresh_token': result.session.refresh_token
         }
     )
+    
+@app.get('/public/info')
+async def public_info():
+    return {"message": "Welcome Stranger! This info is public."}
+
+@app.get("/protected/profile")
+async def protected_profile(request : Request):
+    auth_header = request.headers.get("Authorization")
+    
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return JSONResponse(status_code=401, content={"error" : "Access Token required"})
+    
+    token = auth_header.split(" ")[1]
+    
+    return {'message': "Token Received", "token_preview": token[:10]+"..."}
+
