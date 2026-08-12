@@ -84,5 +84,21 @@ async def protected_profile(request : Request):
     
     token = auth_header.split(" ")[1]
     
-    return {'message': "Token Received", "token_preview": token[:10]+"..."}
-
+    try:
+        user_response = supabase.auth.get_user(token)
+    except:
+        return JSONResponse(status_code=401, content={"message":"Invalid Key"})
+    
+    if user_response is None or user_response.user is None:
+        return JSONResponse(status_code=401, content={"error": "Invalid or expired token"})
+    
+    user = user_response.user
+    
+    return JSONResponse(
+        status_code=200,
+        content={
+            "id": user.id,
+            "email":user.email,
+            'created_at': str(user.created_at)
+        }
+    )
