@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse, Response
 from supabase import create_client, Client
 from pydantic import BaseModel
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 class AuthRequest(BaseModel):
     email: str = None
@@ -24,22 +25,25 @@ async def lifespan(app: FastAPI):
     yield
     
 app = FastAPI(lifespan=lifespan)
+security_scheme = HTTPBearer(auto_error=False)
 
-
-async def get_current_user(request: Request):
-    auth_header = request.headers.get("Authorization")
-    
-    if not auth_header or not auth_header.startswith("Bearer "):
+async def get_current_user(request: Request, 
+    credentials: HTTPAuthorizationCredentials = Depends(security_scheme)
+    ):
+    if credentials is None:
         raise HTTPException(status_code=401, detail="Access token required")
     
-    token = auth_header.split(" ")[1]
-
+    token = credentials.credentials
+    
     try:
         user_response = supabase.auth.get_user(token)
     except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or Expired token.")
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
     
-    return {"user": user_response.user, token : token}
+    if user_response is None or user_response.user is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    
+    return {'user': user_response.user, "token": token}
 
 @app.post("/auth/signup")
 async def signup(body: AuthRequest):
