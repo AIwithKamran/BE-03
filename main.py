@@ -1,8 +1,8 @@
 import os
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Request, Depends
+from fastapi.responses import JSONResponse, Response
 from supabase import create_client, Client
 from pydantic import BaseModel
 
@@ -25,6 +25,21 @@ async def lifespan(app: FastAPI):
     
 app = FastAPI(lifespan=lifespan)
 
+
+async def get_current_user(request: Request):
+    auth_header = request.headers.get("Authorization")
+    
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Access token required")
+    
+    token = auth_header.split(" ")[1]
+
+    try:
+        user_response = supabase.auth.get_user(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or Expired token.")
+    
+    return {"user": user_response.user, token : token}
 
 @app.post("/auth/signup")
 async def signup(body: AuthRequest):
@@ -76,24 +91,8 @@ async def public_info():
     return {"message": "Welcome Stranger! This info is public."}
 
 @app.get("/protected/profile")
-async def protected_profile(request : Request):
-    auth_header = request.headers.get("Authorization")
-    
-    if not auth_header or not auth_header.startswith("Bearer "):
-        return JSONResponse(status_code=401, content={"error" : "Access Token required"})
-    
-    token = auth_header.split(" ")[1]
-    
-    try:
-        user_response = supabase.auth.get_user(token)
-    except:
-        return JSONResponse(status_code=401, content={"message":"Invalid Key"})
-    
-    if user_response is None or user_response.user is None:
-        return JSONResponse(status_code=401, content={"error": "Invalid or expired token"})
-    
-    user = user_response.user
-    
+async def protected_profile(current=Depends(get_current_user)):
+    user = current['user']
     return JSONResponse(
         status_code=200,
         content={
@@ -102,3 +101,19 @@ async def protected_profile(request : Request):
             'created_at': str(user.created_at)
         }
     )
+
+
+@app.get("/protected/dashboard")
+async def protected_dashboard(current=Depends(get_current_user)):
+    user = current['user']
+    return {'message': f'Welcome to your dashboard, {user.email}'}
+
+
+@app.post("/auth/logout")
+async def logout(current=Depends(get_current_user)):
+    try:
+        supabase.auth.sign_out()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return Response(status_code=204)
